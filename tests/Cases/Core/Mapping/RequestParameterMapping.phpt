@@ -23,6 +23,7 @@ use GuzzleHttp\Psr7\Response;
 use GuzzleHttp\Psr7\ServerRequest;
 use Tester\Assert;
 use Tester\TestCase;
+use Tests\Fixtures\Mapping\Parameter\MyEmailTypeMapper;
 
 final class TestRequestParameterMapping extends TestCase
 {
@@ -45,6 +46,7 @@ final class TestRequestParameterMapping extends TestCase
 		$this->requestParameterMapping->addMapper(EndpointParameter::TYPE_FLOAT, new FloatTypeMapper());
 		$this->requestParameterMapping->addMapper(EndpointParameter::TYPE_INTEGER, new IntegerTypeMapper());
 		$this->requestParameterMapping->addMapper(EndpointParameter::TYPE_STRING, new StringTypeMapper());
+		$this->requestParameterMapping->addMapper('email', new MyEmailTypeMapper());
 
 		$this->request = new ApiRequest(
 			new ServerRequest(
@@ -271,23 +273,25 @@ final class TestRequestParameterMapping extends TestCase
 			400
 		);
 
-		$requestWithHeader = $request->withHeader(
-			'auth',
-			[
-				'some',
-				'other',
-			]
-		);
+		foreach (['auth', 'Auth'] as $name) {
+			$requestWithHeader = $request->withHeader(
+				$name,
+				[
+					'some',
+					'other',
+				]
+			);
 
-		$headerResponse = $this->requestParameterMapping->map($requestWithHeader, $this->response);
+			$headerResponse = $this->requestParameterMapping->map($requestWithHeader, $this->response);
 
-		Assert::equal(
-			[
-				'some',
-				'other',
-			],
-			$headerResponse->getHeader('auth')
-		);
+			Assert::equal(
+				[
+					'some',
+					'other',
+				],
+				$headerResponse->getHeader($name)
+			);
+		}
 	}
 
 	public function testDatetimeInQuery(): void
@@ -345,6 +349,66 @@ final class TestRequestParameterMapping extends TestCase
 			},
 			ClientErrorException::class,
 			'Query request parameter "datetime" should be provided.',
+			400
+		);
+	}
+
+
+	public function testEmailInQuery(): void
+	{
+		$handler = new EndpointHandler('class', 'method');
+
+		$endpoint = new Endpoint($handler);
+
+		$parameter = new EndpointParameter('email', 'email');
+		$parameter->setIn(EndpointParameter::IN_QUERY);
+		$parameter->setRequired(true);
+		$parameter->setAllowEmpty(false);
+
+		$endpoint->addParameter($parameter);
+
+		$requestWithDatetime = $this->request
+			->withAttribute(RequestAttributes::ATTR_ENDPOINT, $endpoint)
+			->withAttribute(RequestAttributes::ATTR_PARAMETERS, ['email' => 'test@test.com']);
+
+		$this->requestParameterMapping->map($requestWithDatetime, $this->response);
+
+		$requestWithInvalidDatetime = $this->request
+			->withAttribute(RequestAttributes::ATTR_ENDPOINT, $endpoint)
+			->withAttribute(RequestAttributes::ATTR_PARAMETERS, ['email' => 'foobar']);
+
+		Assert::throws(
+			function () use ($requestWithInvalidDatetime): void {
+				$this->requestParameterMapping->map($requestWithInvalidDatetime, $this->response);
+			},
+			ClientErrorException::class,
+			'Query request parameter "email" should be of type email. Pass valid email address.',
+			400
+		);
+
+		$requestWithEmptyDatetime = $this->request
+			->withAttribute(RequestAttributes::ATTR_ENDPOINT, $endpoint)
+			->withAttribute(RequestAttributes::ATTR_PARAMETERS, ['email' => '']);
+
+		Assert::throws(
+			function () use ($requestWithEmptyDatetime): void {
+				$this->requestParameterMapping->map($requestWithEmptyDatetime, $this->response);
+			},
+			ClientErrorException::class,
+			'Query request parameter "email" should not be empty.',
+			400
+		);
+
+		$requestWithNoDatetime = $this->request
+			->withAttribute(RequestAttributes::ATTR_ENDPOINT, $endpoint)
+			->withAttribute(RequestAttributes::ATTR_PARAMETERS, []);
+
+		Assert::throws(
+			function () use ($requestWithNoDatetime): void {
+				$this->requestParameterMapping->map($requestWithNoDatetime, $this->response);
+			},
+			ClientErrorException::class,
+			'Query request parameter "email" should be provided.',
 			400
 		);
 	}
